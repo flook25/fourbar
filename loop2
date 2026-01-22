@@ -1,0 +1,61 @@
+clc; clear; close all;
+
+% --- Parameters for THIS Loop ---
+L1 = 210;  % d (Ground)
+L2 = 168;  % a (Input - Light Blue/Green from prev loop)
+L3 = 210;  % b (Coupler - Blue)
+L4 = 118;  % c (Output - Brown)
+
+% --- Input Angle from Previous Loop ---
+% User specified: Theta 2 green = -30.69 deg
+theta2_deg = -30.69; 
+theta2 = deg2rad(theta2_deg);
+
+% --- 1. Calculate Constants K ---
+K1 = L1 / L2;
+K2 = L1 / L4;
+K3 = (L2^2 - L3^2 + L4^2 + L1^2) / (2 * L2 * L4);
+
+% --- 2. Calculate A, B, C Coefficients ---
+A = cos(theta2) - K1 - (K2 * cos(theta2)) + K3;
+B = -2 * sin(theta2);
+C = K1 - ((K2 + 1) * cos(theta2)) + K3;
+
+% --- 3. Check Discriminant (Discr) ---
+discr = B^2 - 4*A*C;
+if discr < 0
+    error('Mechanisum cannot be assembled at this angle (Discriminant < 0)');
+end
+
+% --- 4. Solve for Theta 4 (Output - Brown Link) ---
+% Case 1: Open Configuration (Plus Sign usually)
+theta4_rad_open = 2 * atan2((-B + sqrt(discr)), (2 * A));
+
+% Case 2: Crossed Configuration (Minus Sign usually)
+theta4_rad_cross = 2 * atan2((-B - sqrt(discr)), (2 * A));
+
+% --- 5. Solve for Theta 3 (Coupler - Blue Link) ---
+% Using Vector Loop equation relation for both cases
+% Formula: tan(t3) = (c*sin(t4) - a*sin(t2)) / (c*cos(t4) + d - a*cos(t2))
+
+% For Open Case
+num_open = L4 * sin(theta4_rad_open) - L2 * sin(theta2);
+den_open = L4 * cos(theta4_rad_open) + L1 - L2 * cos(theta2);
+theta3_rad_open = atan2(num_open, den_open);
+
+% For Crossed Case
+num_cross = L4 * sin(theta4_rad_cross) - L2 * sin(theta2);
+den_cross = L4 * cos(theta4_rad_cross) + L1 - L2 * cos(theta2);
+theta3_rad_cross = atan2(num_cross, den_cross);
+
+% --- 6. Display Results ---
+fprintf('--- Results for Current Loop ---\n');
+fprintf('Input Theta 2 (Light Blue): %.4f deg\n', theta2_deg);
+fprintf('--------------------------------\n');
+fprintf('CASE 1: OPEN Configuration\n');
+fprintf('Theta 3 (Blue Link)  : %.4f deg\n', rad2deg(theta3_rad_open));
+fprintf('Theta 4 (Brown Link) : %.4f deg\n', rad2deg(theta4_rad_open));
+fprintf('--------------------------------\n');
+fprintf('CASE 2: CROSSED Configuration\n');
+fprintf('Theta 3 (Blue Link)  : %.4f deg\n', rad2deg(theta3_rad_cross));
+fprintf('Theta 4 (Brown Link) : %.4f deg\n', rad2deg(theta4_rad_cross));
