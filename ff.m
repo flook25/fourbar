@@ -1,123 +1,120 @@
-clear all;
-close all;
-clc;
+clear all; close all; clc;
 
-% --- 1. SETUP PARAMETERS (Corrected based on Assignment) ---
-% Units in Meters (m) for better scaling
-L1 = 0.210; % Ground (210 mm)
-L2 = 0.091; % Crank (91 mm)
-L3 = 0.236; % Coupler (236 mm)
-L4 = 0.180; % Rocker (180 mm)
+%% 1. USER DATA (ข้อมูลตัวเลขของคุณ)
+% ใช้หน่วย mm ตามที่คุณให้มา (ไม่แปลงเป็นเมตรเพื่อความสอดคล้อง)
+L_Ground = 210;  % d (ระยะ O2-O4)
+L_Green = 180;   % a (Link 2 ที่ O2)
+L_Yellow = 180;  % b (Link 3 Coupler - เป้าหมายคือมุมนี้ต้องได้ 19.94)
+L_Grey = 118;    % c (Link 4 ที่ O4)
 
-% Input Conditions (from Assignment Question 1)
-q2_deg = 19.94;          % Input angle in degrees
-w2 = -2.2;               % Input Velocity (rad/s)
-alp2 = -0.8;             % Input Acceleration (rad/s^2)
+% --- TARGET INPUT SPECIFICATION ---
+% เป้าหมาย: ต้องการให้มุมของก้านเหลือง (theta3) เป็น 19.94 องศา
+target_theta3_deg = 19.94;
+target_theta3_rad = deg2rad(target_theta3_deg);
 
-% Constants for Position Analysis (Norton's Method)
-a = L2; b = L3; c = L4; d = L1;
-q2 = deg2rad(q2_deg);    % Convert to radians
+% เงื่อนไขเพิ่มเติม: Green link (theta2) ต้องอยู่ใต้ Ground
+% ซึ่งหมายความว่า theta2 ที่เราหาได้ควรเป็นค่าติดลบ (ในช่วง -180 ถึง 0)
 
-% --- 2. POSITION ANALYSIS (Your Logic) ---
-K1 = d/a;
-K2 = d/c;
-K3 = (a^2-b^2+c^2+d^2)/(2*a*c);
-K4 = d/b;
-K5 = (c^2 -d^2 -a^2 -b^2)/(2*a*b);
+%% 2. SOLVER USING NORTON'S METHOD (ตามโค้ดอาจารย์)
 
-% Coefficients for Theta 4
-A = cos(q2) - K1 - K2*cos(q2) + K3;
-B = -2*sin(q2);
-C = K1 - (K2+1)*cos(q2) + K3;
+% เราจะใช้ fsolve หาค่า theta2 (มุม Input) ที่ทำให้ได้ theta3 ตามเป้าหมาย
+% โดยใช้สมการเวกเตอร์ลูป: a*e^(j*t2) + b*e^(j*t3) - c*e^(j*t4) - d = 0
 
-% Coefficients for Theta 3
-D = cos(q2) - K1 + K4*cos(q2) + K5;
-E = -2*sin(q2);
-F = K1 + (K4-1)*cos(q2) + K5;
+% การเตรียม parameters สำหรับ fsolve
+% เราต้องการหา theta2 และ theta4 (2 ตัวแปร) จาก 2 สมการ (Real & Imaginary)
+% โดยที่ theta3 เป็นค่าคงที่ที่เรากำหนดไว้แล้ว (target_theta3_rad)
 
-% Calculate Theta 4 (Open & Crossed)
-q4_crossed = 2*atan((-B + sqrt(B^2-4*A*C))/(2*A));
-q4_open    = 2*atan((-B - sqrt(B^2-4*A*C))/(2*A)); % Check sign for correct config
+% ฟังก์ชัน Objective สำหรับ fsolve (ต้องเท่ากับ 0)
+% x(1) = theta2, x(2) = theta4
+objective_func = @(x) [
+    L_Green * cos(x(1)) + L_Yellow * cos(target_theta3_rad) - L_Grey * cos(x(2)) - L_Ground; % Real part
+    L_Green * sin(x(1)) + L_Yellow * sin(target_theta3_rad) - L_Grey * sin(x(2))             % Imaginary part
+];
 
-% Calculate Theta 3 (Open & Crossed)
-q3_crossed = 2*atan((-E + sqrt(E^2-4*D*F))/(2*D));
-q3_open    = 2*atan((-E - sqrt(E^2-4*D*F))/(2*D)); % Check sign for correct config
+% การเดาค่าเริ่มต้น (Initial Guess) - สำคัญมากสำหรับการลู่เข้าสู่คำตอบที่ต้องการ
+% เราต้องการให้ Green (x(1)) อยู่ใต้กราวด์ เดาเป็นค่าลบ เช่น -60 องศา
+% Grey (x(2)) น่าจะอยู่ควอดรันต์ที่ 1 หรือ 2 เดาเป็น 90 องศา
+initial_guess = [deg2rad(-60), deg2rad(90)];
 
-% Select OPEN CONFIGURATION for the Assignment (Standard)
-q3 = q3_open;
-q4 = q4_open;
+% ตั้งค่า options สำหรับ fsolve
+options = optimoptions('fsolve', 'Display', 'off', 'FunctionTolerance', 1e-10);
 
-fprintf('--- Position Results ---\n');
-fprintf('Theta 3 (Open): %.4f deg\n', rad2deg(q3));
-fprintf('Theta 4 (Open): %.4f deg\n', rad2deg(q4));
+% แก้สมการ
+[sol, fval, exitflag] = fsolve(objective_func, initial_guess, options);
 
-% --- 3. VELOCITY ANALYSIS (Added for Q1) ---
-% Matrix Form: [J] * [w3; w4] = [V]
-J = [-L3*sin(q3),  L4*sin(q4);
-      L3*cos(q3), -L4*cos(q4)];
-  
-V_rhs = [ L2*w2*sin(q2);
-         -L2*w2*cos(q2)];
+if exitflag <= 0
+    error('fsolve did not converge to a solution.');
+end
 
-w_sol = J \ V_rhs; % Solve Linear System
-w3 = w_sol(1);
-w4 = w_sol(2);
+% ดึงคำตอบ
+theta2_sol_rad = sol(1); % นี่คือมุม Input ของก้านเขียวที่เราหามาได้
+theta4_sol_rad = sol(2);
 
-fprintf('\n--- Velocity Results ---\n');
-fprintf('Omega 3: %.4f rad/s\n', w3);
-fprintf('Omega 4: %.4f rad/s\n', w4);
+% แปลงเป็นองศาและปรับช่วงให้เหมาะสม
+theta2_sol_deg = rad2deg(theta2_sol_rad);
+theta4_sol_deg = rad2deg(theta4_sol_rad);
 
-% --- 4. ACCELERATION ANALYSIS (Added for Q1) ---
-% Matrix Form: [J] * [alpha3; alpha4] = [Acc_RHS]
-A_rhs = [ L2*alp2*sin(q2) + L2*w2^2*cos(q2) + L3*w3^2*cos(q3) - L4*w4^2*cos(q4);
-         -L2*alp2*cos(q2) + L2*w2^2*sin(q2) + L3*w3^2*sin(q3) - L4*w4^2*sin(q4)];
+%% 3. VERIFICATION (ตรวจสอบความถูกต้อง)
+% ตรวจสอบว่า theta2 ที่ได้ตรงกับเงื่อนไข "below ground" หรือไม่
+if theta2_sol_deg > 0 && theta2_sol_deg < 180
+    warning('Solution found, but Green link is ABOVE ground. Check initial guess.');
+end
 
-alp_sol = J \ A_rhs; % Solve Linear System (Using same J matrix)
-alp3 = alp_sol(1);
-alp4 = alp_sol(2);
+%% 4. CALCULATE COORDINATES FOR PLOTTING
+O2 = [0; 0];
+O4 = [L_Ground; 0];
 
-fprintf('\n--- Acceleration Results ---\n');
-fprintf('Alpha 3: %.4f rad/s^2\n', alp3);
-fprintf('Alpha 4: %.4f rad/s^2\n', alp4);
+% ใช้มุมที่แก้ได้มาหาพิกัด
+J_Green = O2 + L_Green * [cos(theta2_sol_rad); sin(theta2_sol_rad)];
+J_Grey = O4 + L_Grey * [cos(theta4_sol_rad); sin(theta4_sol_rad)];
 
-% --- 5. POINT P CALCULATION (Trajectory Point) ---
-P_dist = 0.065; % 65 mm on Link 3
-% Assuming P is on the line AB (delta = 0). If offset, add angle here.
-Rp = L2*exp(1j*q2) + P_dist*exp(1j*q3); 
-P_acc_x = real(-L2*alp2*sin(q2) - L2*w2^2*cos(q2) - P_dist*alp3*sin(q3) - P_dist*w3^2*cos(q3));
-P_acc_y = real(L2*alp2*cos(q2) - L2*w2^2*sin(q2) + P_dist*alp3*cos(q3) - P_dist*w3^2*sin(q3));
+%% 5. DISPLAY RESULTS
+fprintf('========================================\n');
+fprintf('RESULTS USING NORTON''S CONCEPT (via fsolve)\n');
+fprintf('========================================\n');
+fprintf('Target Theta Yellow (Coupler): %8.2f deg\n', target_theta3_deg);
+fprintf('Condition: Green below ground\n');
+fprintf('----------------------------------------\n');
+fprintf('SOLVED ANGLES:\n');
+fprintf('Theta Green (at O2):           %8.2f deg\n', theta2_sol_deg);
+fprintf('Theta Grey  (at O4):           %8.2f deg\n', theta4_sol_deg);
+fprintf('========================================\n');
 
-fprintf('\n--- Point P Results ---\n');
-fprintf('P Accel X: %.4f m/s^2\n', P_acc_x);
-fprintf('P Accel Y: %.4f m/s^2\n', P_acc_y);
+%% 6. PLOTTING
+figure('Color','w','Position',[100 100 700 500]); hold on; axis equal; grid on; box on;
+title({'Structure: Green(O2)-Yellow(Coup)-Grey(O4)'; ...
+       ['Method: Norton Concept (fsolve) | Target \theta_Y=' num2str(target_theta3_deg) '^\circ']});
+xlabel('X (mm)'); ylabel('Y (mm)');
 
-% --- 6. PLOTTING (Based on your style) ---
-% Define Vectors for Plotting
-RA = L2*exp(1j*q2);
-RB = RA + L3*exp(1j*q3);
-RO4 = L1*exp(1j*0); % Ground from O2 to O4
+% Ground Line (Pink เข้มตามต้องการ)
+plot([-50 O4(1)+50], [0 0], 'Color', [1 0.2 0.6], 'LineWidth', 3, 'LineStyle', '--');
 
-% Convert to Cartesian
-Ax = real(RA); Ay = imag(RA);
-Bx = real(RB); By = imag(RB);
-Ox = 0; Oy = 0;
-O4x = real(RO4); O4y = imag(RO4);
+% Pivots
+plot(O2(1), O2(2), 'ko', 'MarkerSize', 14, 'MarkerFaceColor','w', 'LineWidth',2);
+text(O2(1)-30, O2(2)+20, 'O2', 'FontSize',12,'FontWeight','bold');
+plot(O4(1), O4(2), 'ko', 'MarkerSize', 14, 'MarkerFaceColor','w', 'LineWidth',2);
+text(O4(1)+10, O4(2)+20, 'O4', 'FontSize',12,'FontWeight','bold');
 
-figure(1);
-hold on; grid on; axis equal;
-title('Four-Bar Linkage (Open Configuration)');
-xlabel('X Position (m)'); ylabel('Y Position (m)');
+% Links
+plot([O2(1) J_Green(1)], [O2(2) J_Green(2)], 'g-', 'LineWidth', 7, 'DisplayName','Green');
+plot([J_Green(1) J_Grey(1)], [J_Green(2) J_Grey(2)], 'y-', 'LineWidth', 7, 'DisplayName',['Yellow (Target \theta=' num2str(target_theta3_deg) '^\circ)']);
+plot([O4(1) J_Grey(1)], [O4(2) J_Grey(2)], 'Color', [0.6 0.6 0.6], 'LineWidth', 7, 'DisplayName','Grey');
 
-% Plot Links using plot command (easier to see than quiver for connected links)
-plot([Ox, Ax], [Oy, Ay], 'r-o', 'LineWidth', 2, 'DisplayName', 'Crank');     % Link 2
-plot([Ax, Bx], [Ay, By], 'b-o', 'LineWidth', 2, 'DisplayName', 'Coupler');   % Link 3
-plot([O4x, Bx], [O4y, By], 'k-o', 'LineWidth', 2, 'DisplayName', 'Rocker');  % Link 4
-plot([Ox, O4x], [Oy, O4y], 'k--', 'LineWidth', 1.5, 'DisplayName', 'Ground'); % Link 1
+% Joints
+plot(J_Green(1), J_Green(2), 'ko', 'MarkerSize', 10, 'MarkerFaceColor','w', 'LineWidth',1.5);
+plot(J_Grey(1), J_Grey(2), 'ko', 'MarkerSize', 10, 'MarkerFaceColor','w', 'LineWidth',1.5);
 
-% Plot Vector Arrows (Your quiver style - purely for visualization)
-quiver(Ox, Oy, Ax, Ay, 0, 'r', 'MaxHeadSize', 0.5);
-quiver(Ax, Ay, Bx-Ax, By-Ay, 0, 'b', 'MaxHeadSize', 0.5);
-quiver(O4x, O4y, Bx-O4x, By-O4y, 0, 'k', 'MaxHeadSize', 0.5);
+% Visualize Input Angle on Yellow Link
+plot([J_Green(1) J_Green(1)+60], [J_Green(2) J_Green(2)], 'k--', 'LineWidth', 0.5); 
+arc_r = 40; 
+% สร้างเส้นโค้งมุม (ต้องระวังทิศทาง)
+if target_theta3_rad >= 0
+    ang_vec = linspace(0, target_theta3_rad, 20);
+else
+    ang_vec = linspace(target_theta3_rad, 0, 20);
+end
+plot(J_Green(1) + arc_r*cos(ang_vec), J_Green(2) + arc_r*sin(ang_vec), 'r-', 'LineWidth', 1.5);
+text(J_Green(1) + arc_r+5, J_Green(2) + arc_r*sin(target_theta3_rad/2), ...
+     ['\theta_{Y}=' num2str(target_theta3_deg) '^{\circ}'], 'Color', 'r', 'FontSize', 10, 'FontWeight','bold');
 
-legend('Location', 'best');
-xlim([-0.1 0.3]); ylim([-0.1 0.2]);
+legend('Location','NorthEastOutside'); xlim([-50 300]); ylim([-200 150]);
