@@ -1,0 +1,114 @@
+clear all; close all; clc;
+
+%% 1. USER DATA (ข้อมูลตัวเลขของคุณ)
+L_Ground = 210;  % Distance O2-O4
+L_Green = 180;   % Link at O2
+L_Yellow = 180;  % Coupler Link
+L_Grey = 118;    % Link at O4
+
+% --- INPUT SPECIFICATION ---
+% มุม Input ถูกกำหนดที่ "Yellow Link" (Coupler)
+theta_Yellow_deg = 19.94;
+theta_Yellow = deg2rad(theta_Yellow_deg);
+fprintf('Input driving angle is on Yellow Link: %.2f degrees\n', theta_Yellow_deg);
+
+%% 2. GEOMETRIC SOLVER (Coupler-Driven Analysis)
+% เราทราบมุมและประนาวของก้านเหลือง เราต้องหาตำแหน่งก้านเขียวและเทา
+% ที่ทำให้ประกอบกันได้ และก้านเขียวอยู่ด้านล่าง
+
+O2 = [0; 0];
+O4 = [L_Ground; 0];
+
+% กำหนดเวกเตอร์ของก้านเหลือง (Yellow Vector)
+V_Yellow = L_Yellow * [cos(theta_Yellow); sin(theta_Yellow)];
+
+% สร้างสมการวงกลม 2 วงเพื่อหาจุดตัด
+% วงกลม 1: จุดปลายก้านเขียว (J_Green) ต้องอยู่ห่างจาก O2 เป็นระยะ L_Green
+% วงกลม 2: ถ้าเราสมมติว่าเอาปลายก้านเหลืองมาต่อที่ O4, ต้นก้านเหลืองจะอยู่ที่ไหน?
+% จุดนั้นคือศูนย์กลางของวงกลมที่ J_Green ต้องอยู่บนนั้นด้วย รัศมีคือ L_Grey
+
+% Virtual Center for Circle 2 (จุดเสมือนถ้าย้ายก้านเหลืองไปที่ O4)
+Center2 = O4 - V_Yellow;
+
+% เราต้องหาจุดตัด (J_Green) ของวงกลมสองวง:
+% Circle 1: Center O2=(0,0), Radius R1 = L_Green
+% Circle 2: Center Center2=(Cx,Cy), Radius R2 = L_Grey
+
+R1 = L_Green;
+R2 = L_Grey;
+Cx = Center2(1); Cy = Center2(2);
+D_centers = norm(Center2 - O2); % ระยะห่างระหว่างจุดศูนย์กลาง
+
+% ตรวจสอบว่าวงกลมตัดกันหรือไม่
+if D_centers > (R1 + R2) || D_centers < abs(R1 - R2) || D_centers == 0
+    error('Assembly failed: Cannot connect links with given Yellow angle.');
+end
+
+% คำนวณจุดตัดของวงกลม (หาตำแหน่ง J_Green ที่เป็นไปได้)
+a_intersect = (R1^2 - R2^2 + D_centers^2) / (2 * D_centers);
+h_intersect = sqrt(max(0, R1^2 - a_intersect^2));
+
+x0 = O2(1) + a_intersect * (Cx - O2(1)) / D_centers;
+y0 = O2(2) + a_intersect * (Cy - O2(2)) / D_centers;
+
+% จุดตัด 2 จุดที่เป็นไปได้สำหรับปลายก้านเขียว
+J_Green_Sol1 = [x0 + h_intersect * (Cy - O2(2)) / D_centers;
+                y0 - h_intersect * (Cx - O2(1)) / D_centers];
+J_Green_Sol2 = [x0 - h_intersect * (Cy - O2(2)) / D_centers;
+                y0 + h_intersect * (Cx - O2(1)) / D_centers];
+
+% --- CRITICAL SELECTION: Choose solution where Green is BELOW ground ---
+% ตรวจสอบค่า Y ของจุดตัด เลือกจุดที่มีค่า Y ต่ำกว่า (ติดลบมากกว่า)
+if J_Green_Sol1(2) < J_Green_Sol2(2)
+    J_Green = J_Green_Sol1;
+else
+    J_Green = J_Green_Sol2;
+end
+
+% คำนวณจุดปลายก้านเทา (J_Grey) โดยบวกเวกเตอร์ก้านเหลืองเข้าไป
+J_Grey = J_Green + V_Yellow;
+
+% ตรวจสอบความถูกต้อง (ระยะจาก O4 ถึง J_Grey ต้องเท่ากับ L_Grey)
+dist_check = norm(J_Grey - O4);
+if abs(dist_check - L_Grey) > 1e-5
+    warning('Numerical precision warning in assembly.');
+end
+
+%% 3. PLOTTING
+figure('Color','w','Position',[100 100 700 500]); hold on; axis equal; grid on; box on;
+title({'Structure: Green(O2)-Yellow(Coupler)-Grey(O4)'; ...
+       ['Input: \theta_{Yellow} = ' num2str(theta_Yellow_deg) '^{\circ} | Condition: Green below ground']});
+xlabel('X (mm)'); ylabel('Y (mm)');
+
+% Ground Line & Pivots
+plot([-50 O4(1)+50], [0 0], 'k:', 'LineWidth', 1);
+plot(O2(1), O2(2), 'ko', 'MarkerSize', 14, 'MarkerFaceColor','w', 'LineWidth',2);
+text(O2(1)-30, O2(2)+20, 'O2', 'FontSize',12,'FontWeight','bold');
+plot(O4(1), O4(2), 'ko', 'MarkerSize', 14, 'MarkerFaceColor','w', 'LineWidth',2);
+text(O4(1)+10, O4(2)+20, 'O4', 'FontSize',12,'FontWeight','bold');
+
+% Links
+% Green (O2) - Forced below ground by solver selection
+plot([O2(1) J_Green(1)], [O2(2) J_Green(2)], 'g-', 'LineWidth', 7, 'DisplayName','Green (L=180, below ground)');
+
+% Yellow (Coupler) - THE INPUT LINK
+plot([J_Green(1) J_Grey(1)], [J_Green(2) J_Grey(2)], 'y-', 'LineWidth', 7, 'DisplayName',['Yellow (L=180, Input \theta=' num2str(theta_Yellow_deg) '^\circ)']);
+
+% Grey (O4)
+plot([O4(1) J_Grey(1)], [O4(2) J_Grey(2)], 'Color', [0.6 0.6 0.6], 'LineWidth', 7, 'DisplayName','Grey (L=118)');
+
+% Joints
+plot(J_Green(1), J_Green(2), 'ko', 'MarkerSize', 10, 'MarkerFaceColor','w', 'LineWidth',1.5);
+plot(J_Grey(1), J_Grey(2), 'ko', 'MarkerSize', 10, 'MarkerFaceColor','w', 'LineWidth',1.5);
+
+% Visualize Input Angle on Yellow Link
+% สร้างเส้นแนวนอนที่จุด J_Green เพื่อแสดงมุมเทียบกับแกน X
+plot([J_Green(1) J_Green(1)+60], [J_Green(2) J_Green(2)], 'k--', 'LineWidth', 0.5); 
+arc_r = 40;
+ang_vec = linspace(0, theta_Yellow, 20);
+plot(J_Green(1) + arc_r*cos(ang_vec), J_Green(2) + arc_r*sin(ang_vec), 'r-', 'LineWidth', 1.5);
+text(J_Green(1) + arc_r+5, J_Green(2) + arc_r*sin(theta_Yellow/2), ...
+     ['\theta_{Y}=' num2str(theta_Yellow_deg) '^{\circ}'], 'Color', 'r', 'FontSize', 10, 'FontWeight','bold');
+
+legend('Location','NorthEastOutside');
+xlim([-50 300]); ylim([-200 150]);
