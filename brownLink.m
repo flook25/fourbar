@@ -1,106 +1,125 @@
 clear all; close all; clc;
 
-%% 1. SYSTEM PARAMETERS (กำหนดตัวแปรเข้าสูตร)
-% ให้ Brown เป็น Input (a) และอยู่ติด Ground
-L_Ground    = 210; % d
-L_Brown     = 118; % a (Input Link - สีน้ำตาล)
-L_Blue      = 210; % b (Coupler Link - สีน้ำเงิน)
-L_LightBlue = 168; % c (Output Link - สีฟ้าอ่อน)
+%% 1. SYSTEM PARAMETERS
+L1 = 210; % d (Ground O2-O4)
+L2 = 168; % a (Light Blue Link)
+L3 = 210; % b (Blue Link - Coupler)
+L4 = 118; % c (Brown Link - INPUT)
 
-% Map เข้าตัวแปรสูตร Norton
-d = L_Ground;
-a = L_Brown;      % กำหนด Brown เป็น a
-b = L_Blue;
-c = L_LightBlue;
+% กำหนดตัวแปรสำหรับเข้าสูตร
+d = L1;
+a = L2;
+b = L3;
+c = L4;
 
-% --- INPUT SPECIFICATION ---
-% กำหนดมุมให้กับ Brown Link โดยตรง
-theta_input_deg = 81.65; 
-theta2 = deg2rad(theta_input_deg); % นี่คือมุมของ Brown Link
+% --- INPUT SPECIFICATION (AT BROWN LINK) ---
+% เงื่อนไข: "Link brown runs down below ground"
+% ดังนั้นมุมต้องเป็นค่าติดลบ (วัดลงจากแกน X ที่ O4)
+theta4_deg = -81.65;      
+theta4 = deg2rad(theta4_deg); 
 
-%% 2. SOLVER (Standard Forward Kinematics)
-% ใช้สูตร A, B, C ตามสไลด์อาจารย์เป๊ะๆ
-% หา Theta4 (มุมของ Light Blue) และ Theta3 (มุมของ Blue)
+%% 2. SOLVER (Inverse Kinematics: Known Theta4 -> Find Theta2, Theta3)
+% เราต้องการหา Theta2 (Light Blue) โดยรู้ Theta4 (Brown)
 
-K1 = d/a;
-K2 = d/c;
-K3 = (a^2 - b^2 + c^2 + d^2)/(2*a*c);
-K4 = d/b;
-K5 = (c^2 - d^2 - a^2 - b^2)/(2*a*b);
+% คำนวณสัมประสิทธิ์ A, B, C สำหรับ Inverse Case
+% จากสมการ Vector Loop: R_LightBlue + R_Blue = R_Ground + R_Brown
+A_inv = -2 * a * c * sin(theta4);
+B_inv = -2 * a * (c * cos(theta4) + d);
+C_inv = a^2 + c^2 + d^2 - b^2 + 2 * c * d * cos(theta4);
 
-% --- หา Theta 4 (Output - Light Blue) ---
-A = cos(theta2) - K1 - K2*cos(theta2) + K3;
-B = -2*sin(theta2);
-C = K1 - (K2+1)*cos(theta2) + K3;
+% ใช้สูตร Quadratic จากการแทนค่า t = tan(theta2/2)
+A_quad = C_inv - B_inv;
+B_quad = 2 * A_inv;
+C_quad = C_inv + B_inv;
 
-det = B^2 - 4*A*C;
-if det < 0
-    error('Assembly failed.');
+det_quad = B_quad^2 - 4*A_quad*C_quad;
+
+if det_quad < 0
+    error('Assembly failed: Cannot assemble mechanism with this Brown Link angle.');
 end
 
-% คำนวณ 2 คำตอบ (Open / Crossed)
-t4_1 = 2*atan2(-B + sqrt(det), 2*A);
-t4_2 = 2*atan2(-B - sqrt(det), 2*A);
+% --- คำนวณหา Theta2 (Light Blue) ---
+% หาค่า t = tan(theta2 / 2)
+t_sol1 = (-B_quad + sqrt(det_quad)) / (2*A_quad);
+t_sol2 = (-B_quad - sqrt(det_quad)) / (2*A_quad);
 
-% --- หา Theta 3 (Coupler - Blue) ---
-D = cos(theta2) - K1 + K4*cos(theta2) + K5;
-E = -2*sin(theta2);
-F = K1 + (K4-1)*cos(theta2) + K5;
+% แปลงกลับเป็นมุม theta2
+theta2_sol1 = 2 * atan(t_sol1);
+theta2_sol2 = 2 * atan(t_sol2);
 
-det3 = E^2 - 4*D*F;
-t3_1 = 2*atan2(-E + sqrt(det3), 2*D);
-t3_2 = 2*atan2(-E - sqrt(det3), 2*D);
+% --- คำนวณหา Theta3 (Blue - Coupler) ---
+% จาก Vector Loop: R_Blue = R_Ground + R_Brown - R_LightBlue
+% b*e^(j*t3) = d + c*e^(j*t4) - a*e^(j*t2)
+get_theta3 = @(th2) angle(d + c*exp(1j*theta4) - a*exp(1j*th2));
 
-% เลือก Case ที่ต้องการ (ปกติใช้ Case 1 หรือ 2 ลองสลับดูได้ครับ)
-% เลือกชุดคำตอบที่ 2 (มักจะเป็น Open สำหรับ configuration นี้)
-theta4 = t4_2; 
-theta3 = t3_2;
+theta3_sol1 = get_theta3(theta2_sol1);
+theta3_sol2 = get_theta3(theta2_sol2);
 
 %% 3. PLOTTING
-% คำนวณ Vector Position (ใช้ exp ตามสไตล์อาจารย์)
-R_Brown     = a * exp(1j * theta2);    % Input (Brown)
-R_Blue      = b * exp(1j * theta3);    % Coupler (Blue)
-R_LightBlue = c * exp(1j * theta4);    % Output (Light Blue)
-R_Ground    = d * exp(1j * 0);         % Ground
+figure('Color','w','Position',[100 100 1000 500]); 
 
-% Coordinates
-J1 = R_Brown;            % จุดต่อ Brown-Blue
-J2 = R_Brown + R_Blue;   % จุดต่อ Blue-LightBlue (คำนวณจากฝั่งซ้าย)
-% หรือ J2_check = R_Ground + R_LightBlue; % (คำนวณจากฝั่งขวา)
+% --- PLOT CASE 1 ---
+subplot(1,2,1); hold on; axis equal; grid on;
+title(['Case 1: Brown Input \theta = ' num2str(theta4_deg) '^\circ']);
+plot_mechanism(a, b, c, d, theta2_sol1, theta3_sol1, theta4);
+xlim([-100 350]); ylim([-250 150]); % ปรับแกน Y ให้เห็นส่วนล่างชัดเจน
 
-figure('Color','w','Position',[100 100 800 500]); 
-hold on; axis equal; grid on; box on;
-title(['Mechanism Analysis: Brown Link as Input (\theta = ' num2str(theta_input_deg) '^\circ)']);
-xlabel('X (mm)'); ylabel('Y (mm)');
+% --- PLOT CASE 2 ---
+subplot(1,2,2); hold on; axis equal; grid on;
+title(['Case 2: Brown Input \theta = ' num2str(theta4_deg) '^\circ']);
+plot_mechanism(a, b, c, d, theta2_sol2, theta3_sol2, theta4);
+xlim([-100 350]); ylim([-250 150]);
 
-% --- PLOT VECTORS (Quiver Style) ---
-
-% 1. Ground (สีชมพูเข้ม)
-plot([0 real(R_Ground)], [0 imag(R_Ground)], 'Color', [0.8 0 0.5], 'LineWidth', 3, 'LineStyle', '--');
-text(0, -20, 'Origin (Pivot 1)'); text(real(R_Ground), -20, 'Pivot 2');
-
-% 2. Brown Link (Input - อยู่ติด Ground ที่จุด Origin)
-quiver(0, 0, real(R_Brown), imag(R_Brown), 0, 'Color', [0.6 0.3 0], 'LineWidth', 5, 'MaxHeadSize', 0.5, 'DisplayName', 'Brown (Input)');
-
-% 3. Blue Link (Coupler)
-quiver(real(J1), imag(J1), real(R_Blue), imag(R_Blue), 0, 'b', 'LineWidth', 5, 'MaxHeadSize', 0.5, 'DisplayName', 'Blue');
-
-% 4. Light Blue Link (Output - อยู่ติด Ground อีกฝั่ง)
-% วาดจาก Pivot 2 ขึ้นไปหา J2
-quiver(real(R_Ground), imag(R_Ground), real(R_LightBlue), imag(R_LightBlue), 0, 'c', 'LineWidth', 5, 'MaxHeadSize', 0.5, 'DisplayName', 'Light Blue');
-
-% Joints
-plot(real(J1), imag(J1), 'ko', 'MarkerFaceColor', 'w', 'MarkerSize', 8);
-plot(real(J2), imag(J2), 'ko', 'MarkerFaceColor', 'w', 'MarkerSize', 8);
-
-% Display Angle Info
+% แสดงผลลัพธ์
 fprintf('========================================\n');
-fprintf('RESULTS (Brown as Input)\n');
+fprintf('RESULTS (Brown Link Below Ground)\n');
+fprintf('Input Theta 4 (Brown): %.2f deg\n', theta4_deg);
 fprintf('========================================\n');
-fprintf('Theta Input (Brown)     : %8.2f deg\n', rad2deg(theta2));
-fprintf('Theta Coupler (Blue)    : %8.2f deg\n', rad2deg(theta3));
-fprintf('Theta Output (LightBlue): %8.2f deg\n', rad2deg(theta4));
+fprintf('CASE 1:\n');
+fprintf('  Theta 2 (Light Blue): %8.2f deg\n', rad2deg(theta2_sol1));
+fprintf('  Theta 3 (Blue)      : %8.2f deg\n', rad2deg(theta3_sol1));
+fprintf('----------------------------------------\n');
+fprintf('CASE 2:\n');
+fprintf('  Theta 2 (Light Blue): %8.2f deg\n', rad2deg(theta2_sol2));
+fprintf('  Theta 3 (Blue)      : %8.2f deg\n', rad2deg(theta3_sol2));
 fprintf('========================================\n');
 
-legend('Location','NorthEast');
-xlim([-50 350]); ylim([-100 300]);
+%% --- INTERNAL FUNCTION FOR PLOTTING ---
+function plot_mechanism(a, b, c, d, th2, th3, th4)
+    % Position Vectors
+    R_LightBlue = a * exp(1j * th2);    % Light Blue (a)
+    R_Blue      = b * exp(1j * th3);    % Blue (b)
+    R_Brown     = c * exp(1j * th4);    % Brown (c)
+    R_Ground    = d * exp(1j * 0);      % Ground (d)
+
+    % Coordinates
+    % Loop: O2 -> LightBlue -> Blue -> Brown -> O4
+    % J1 = ปลาย LightBlue
+    % J2 = ปลาย Brown (วัดจาก O4)
+    
+    J1 = R_LightBlue;              % Joint between Light Blue & Blue
+    J2 = R_Ground + R_Brown;       % Joint between Brown & Blue (Calculated from O4)
+    
+    % Plot Ground (Dark Pink)
+    plot([0 real(R_Ground)], [0 imag(R_Ground)], 'Color', [0.8 0 0.5], 'LineWidth', 3, 'LineStyle', '--');
+    text(0, -20, 'O2'); text(real(R_Ground), -20, 'O4');
+
+    % Link 2 (Light Blue) - จาก O2
+    quiver(0, 0, real(R_LightBlue), imag(R_LightBlue), 0, 'c', 'LineWidth', 5, 'MaxHeadSize', 0.5, 'DisplayName', 'Light Blue');
+    
+    % Link 3 (Blue) - จาก J1 ไป J2
+    quiver(real(J1), imag(J1), real(R_Blue), imag(R_Blue), 0, 'b', 'LineWidth', 5, 'MaxHeadSize', 0.5, 'DisplayName', 'Blue');
+    
+    % Link 4 (Brown) - จาก O4 (Input, ชี้ลง)
+    quiver(real(R_Ground), imag(R_Ground), real(R_Brown), imag(R_Brown), 0, 'Color', [0.6 0.3 0], 'LineWidth', 5, 'MaxHeadSize', 0.5, 'DisplayName', 'Brown (Input)');
+
+    % Joints
+    plot(real(J1), imag(J1), 'ko', 'MarkerFaceColor', 'w', 'MarkerSize', 8);
+    plot(real(J2), imag(J2), 'ko', 'MarkerFaceColor', 'w', 'MarkerSize', 8);
+    
+    % Draw Input Angle Arc at Brown Link
+    r_arc = 40;
+    ang_vec = linspace(0, th4, 20);
+    plot(real(R_Ground) + r_arc*cos(ang_vec), imag(R_Ground) + r_arc*sin(ang_vec), 'r-', 'LineWidth', 1.5);
+    text(real(R_Ground) + r_arc, imag(R_Ground) - 10, ['\theta=' num2str(rad2deg(th4)) '^\circ'], 'Color', 'r');
+end
