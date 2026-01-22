@@ -65,4 +65,52 @@ xlim([-100 350]); ylim([-150 250]);
 subplot(1,2,2); hold on; axis equal; grid on;
 title('Case 2: Crossed Configuration');
 plot_mechanism(a, b, c, d, theta2, t3_sol2, t4_sol2);
-xlim([-100 350]); ylim([-150 250
+xlim([-100 350]); ylim([-150 250]);
+
+% แสดงผลลัพธ์เป็นตัวเลข
+fprintf('========================================\n');
+fprintf('RESULTS FOR LOOP 2 (Input = %.2f deg)\n', theta2_deg);
+fprintf('========================================\n');
+fprintf('CASE 1 (Open):\n');
+fprintf('  Theta 3 (Blue) : %8.2f deg\n', rad2deg(t3_sol1));
+fprintf('  Theta 4 (Brown): %8.2f deg\n', rad2deg(t4_sol1));
+fprintf('----------------------------------------\n');
+fprintf('CASE 2 (Crossed):\n');
+fprintf('  Theta 3 (Blue) : %8.2f deg\n', rad2deg(t3_sol2));
+fprintf('  Theta 4 (Brown): %8.2f deg\n', rad2deg(t4_sol2));
+fprintf('========================================\n');
+
+
+%% --- INTERNAL FUNCTION FOR PLOTTING ---
+function plot_mechanism(a, b, c, d, th2, th3, th4)
+    % Position Vectors
+    R_Input  = a * exp(1j * th2);    % Light Blue
+    R_Coupler= b * exp(1j * th3);    % Blue
+    R_Output = c * exp(1j * th4);    % Brown
+    R_Ground = d * exp(1j * 0);      % Ground
+
+    % Coordinates
+    O2 = 0;
+    O4 = d;
+    J1 = R_Input;             % จุดต่อ Input-Coupler
+    J2 = R_Input + R_Coupler; % จุดต่อ Coupler-Output
+
+    % Plot Vectors (Quiver Style)
+    % Ground (Black)
+    plot([0 real(R_Ground)], [0 imag(R_Ground)], 'k--', 'LineWidth', 2);
+    text(0, -20, 'O2'); text(real(R_Ground), -20, 'O4');
+
+    % Input Link (Light Blue - Cyan)
+    quiver(0, 0, real(R_Input), imag(R_Input), 0, 'c', 'LineWidth', 4, 'MaxHeadSize', 0.5);
+    
+    % Coupler Link (Blue - Dark Blue)
+    quiver(real(J1), imag(J1), real(R_Coupler), imag(R_Coupler), 0, 'b', 'LineWidth', 4, 'MaxHeadSize', 0.5);
+    
+    % Output Link (Brown) - Plot from O4
+    % Vector Loop: R_Output goes from O4 to J2
+    quiver(real(R_Ground), imag(R_Ground), real(R_Output), imag(R_Output), 0, 'Color', [0.6 0.3 0], 'LineWidth', 4, 'MaxHeadSize', 0.5);
+
+    % Joints
+    plot(real(J1), imag(J1), 'ko', 'MarkerFaceColor', 'w');
+    plot(real(J2), imag(J2), 'ko', 'MarkerFaceColor', 'w');
+end
