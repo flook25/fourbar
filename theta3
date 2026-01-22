@@ -14,7 +14,7 @@ b = L3;
 c = L4;
 
 % --- INPUT FROM PREVIOUS STEP ---
-theta2_deg = -30.69;      % Input Angle (Green/Light Blue)
+theta2_deg = 90;      % Input Angle (Green/Light Blue)
 theta2 = deg2rad(theta2_deg); 
 
 %% 2. SOLVER (Forward Kinematics: Known Theta2 -> Find Theta3, Theta4)
