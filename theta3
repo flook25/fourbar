@@ -1,130 +1,68 @@
-clear all;
-close all;
-clc;
+clear all; close all; clc;
 
-% --- 1. SETUP PARAMETERS (Corrected for Assignment Q1) ---
-% Units: Meters (m)
-L1 = 0.210; % Ground (Link 1)
-L2 = 0.091; % Crank (Link 2) -> แก้จาก 0.180 เป็น 0.091
-L3 = 0.236; % Coupler (Link 3) -> แก้จาก 0.180 เป็น 0.236
-L4 = 0.180; % Rocker (Link 4) -> แก้จาก 0.118 เป็น 0.180
+%% 1. SYSTEM PARAMETERS (Loop 2)
+% ตามข้อมูลที่คุณให้มา:
+L1 = 210; % d (Ground)
+L2 = 168; % a (Light Blue Link - Input)
+L3 = 210; % b (Blue Link - Coupler)
+L4 = 118; % c (Brown Link - Output)
 
-% Map variables to Norton's notation
-a = L2; b = L3; c = L4; d = L1;
+% กำหนดตัวแปรสำหรับเข้าสูตร
+d = L1;
+a = L2;
+b = L3;
+c = L4;
 
-% Input Conditions (From Question 1)
-q2d = 19.94;          % Input angle in degrees
-w2  = -2.2;           % Input Velocity (rad/s)
-alpha2 = -0.8;        % Input Acceleration (rad/s^2)
+% --- INPUT FROM PREVIOUS STEP ---
+theta2_deg = -30.69;      % Input Angle (Green/Light Blue)
+theta2 = deg2rad(theta2_deg); 
 
-q2 = deg2rad(q2d);    % Corrected: Use variable q2d (19.94), NOT 40
-
-% --- 2. POSITION ANALYSIS (Norton's Method) ---
+%% 2. SOLVER (Forward Kinematics: Known Theta2 -> Find Theta3, Theta4)
+% คำนวณค่าคงที่ K
 K1 = d/a;
 K2 = d/c;
-K3 = (a^2-b^2+c^2+d^2)/(2*a*c);
-K4 = d/b;
-K5 = (c^2 -d^2 -a^2 -b^2)/(2*a*b);
+K3 = (a^2 - b^2 + c^2 + d^2) / (2*a*c);
 
-% Coefficients for Theta 4
-A = cos(q2) - K1 - K2*cos(q2) + K3;
-B = -2*sin(q2);
-C = K1 - (K2+1)*cos(q2) + K3;
+% คำนวณสัมประสิทธิ์ A, B, C
+A_eq = cos(theta2) - K1 - K2*cos(theta2) + K3;
+B_eq = -2 * sin(theta2);
+C_eq = K1 - (K2+1)*cos(theta2) + K3;
 
-% Coefficients for Theta 3
-D = cos(q2) - K1 + K4*cos(q2) + K5;
-E = -2*sin(q2);
-F = K1 + (K4-1)*cos(q2) + K5;
+% ตรวจสอบ Discriminant
+det = B_eq^2 - 4*A_eq*C_eq;
+if det < 0
+    error('Assembly failed: No solution for this input angle.');
+end
 
-% Calculate Angles (OPEN Configuration)
-q4 = 2*atan((-B - sqrt(B^2-4*A*C))/(2*A)); 
-q3 = 2*atan((-E - sqrt(E^2-4*D*F))/(2*D));
+% --- คำนวณหา Theta4 (Output - Brown) ---
+% Case 1: Open Circuit (มักใช้เครื่องหมาย + หรือ - ขึ้นอยู่กับ configuration)
+t4_sol1 = 2 * atan2( (-B_eq + sqrt(det)), (2*A_eq) );
+% Case 2: Crossed Circuit
+t4_sol2 = 2 * atan2( (-B_eq - sqrt(det)), (2*A_eq) );
 
-fprintf('--- Position Results ---\n');
-fprintf('Theta 3: %.4f deg\n', rad2deg(q3));
-fprintf('Theta 4: %.4f deg\n', rad2deg(q4));
+% --- คำนวณหา Theta3 (Coupler - Blue) ---
+% ฟังก์ชันหา Theta3 จาก Vector Loop
+get_theta3 = @(t4) atan2( (c*sin(t4) - a*sin(theta2)), (c*cos(t4) + d - a*cos(theta2)) );
 
-% --- 3. VELOCITY ANALYSIS (Analytical/Slide Method) ---
-% Using equations derived in report (Elimination method)
-% w3 = (a*w2*sin(q4-q2)) / (b*sin(q3-q4))
-% w4 = (a*w2*sin(q3-q2)) / (c*sin(q3-q4))
+t3_sol1 = get_theta3(t4_sol1);
+t3_sol2 = get_theta3(t4_sol2);
 
-num_w3 = a * w2 * sin(q4 - q2);
-den_w3 = b * sin(q3 - q4);
-w3 = num_w3 / den_w3;
+% --- เลือก Case ที่ต้องการแสดงผล ---
+% ลองเช็คดูว่า Case ไหนให้มุม Blue ใกล้ 90 หรือตามรูปโจทย์
+% ปกติถ้าแขนไขว้กันจะเป็น Crossed (Sol 2)
+% เดี๋ยวจะ Plot ทั้ง 2 แบบให้เลือกครับ
 
-num_w4 = a * w2 * sin(q3 - q2);
-den_w4 = c * sin(q3 - q4);
-w4 = num_w4 / den_w4;
+%% 3. PLOTTING FUNCTION
+figure('Color','w','Position',[100 100 1000 500]); 
 
-fprintf('\n--- Velocity Results ---\n');
-fprintf('Omega 3: %.4f rad/s\n', w3);
-fprintf('Omega 4: %.4f rad/s\n', w4);
+% --- PLOT CASE 1 (Open) ---
+subplot(1,2,1); hold on; axis equal; grid on;
+title('Case 1: Open Configuration');
+plot_mechanism(a, b, c, d, theta2, t3_sol1, t4_sol1);
+xlim([-100 350]); ylim([-150 250]);
 
-% --- 4. ACCELERATION ANALYSIS (Analytical Method) ---
-% Matrix form J * alpha = RHS is cleaner for code
-J = [-b*sin(q3),  c*sin(q4);
-      b*cos(q3), -c*cos(q4)];
-  
-RHS_acc = [ a*alpha2*sin(q2) + a*w2^2*cos(q2) + b*w3^2*cos(q3) - c*w4^2*cos(q4);
-           -a*alpha2*cos(q2) + a*w2^2*sin(q2) + b*w3^2*sin(q3) - c*w4^2*sin(q4)];
-
-alpha_sol = J \ RHS_acc; % Solve system
-alpha3 = alpha_sol(1);
-alpha4 = alpha_sol(2);
-
-fprintf('\n--- Acceleration Results ---\n');
-fprintf('Alpha 3: %.4f rad/s^2\n', alpha3);
-fprintf('Alpha 4: %.4f rad/s^2\n', alpha4);
-
-% --- 5. CALCULATE VECTORS FOR PLOTTING ---
-% Position Vectors
-RA  = a*exp(1j*q2);
-RBA = b*exp(1j*q3);
-RB  = RA + RBA;
-RO4 = d*exp(1j*0);
-
-% Velocity Vectors
-VA  = 1j * a * w2 * exp(1j*q2);
-VBA = 1j * b * w3 * exp(1j*q3);
-VB  = VA + VBA;
-
-% Acceleration Vectors
-AA  = (1j*a*alpha2 - a*w2^2) * exp(1j*q2);
-ABA = (1j*b*alpha3 - b*w3^2) * exp(1j*q3);
-AB  = AA + ABA;
-
-% Extract Components
-RAx = real(RA); RAy = imag(RA);
-RBx = real(RB); RBy = imag(RB);
-O4x = real(RO4); O4y = imag(RO4);
-
-VAx = real(VA); VAy = imag(VA);
-VBx = real(VB); VBy = imag(VB);
-
-AAx = real(AA); AAy = imag(AA);
-ABx = real(AB); ABy = imag(AB);
-
-% --- 6. PLOTTING ---
-figure(1); clf;
-hold on; grid on; axis equal;
-title('Four-Bar Linkage Analysis (Position, Velocity, Accel)');
-xlabel('X (m)'); ylabel('Y (m)');
-
-% 6.1 Links
-plot([0, RAx],   [0, RAy],   'r-o', 'LineWidth', 3); % Crank
-plot([RAx, RBx], [RAy, RBy], 'b-o', 'LineWidth', 3); % Coupler
-plot([O4x, RBx], [O4y, RBy], 'k-o', 'LineWidth', 3); % Rocker
-plot([0, O4x],   [0, O4y],   'k--', 'LineWidth', 1.5); % Ground
-
-% 6.2 Velocity Vectors (Green) - Scaled
-S_v = 0.05; 
-quiver(RAx, RAy, VAx*S_v, VAy*S_v, 0, 'g', 'LineWidth', 2, 'MaxHeadSize', 0.5);
-quiver(RBx, RBy, VBx*S_v, VBy*S_v, 0, 'g', 'LineWidth', 2, 'MaxHeadSize', 0.5);
-
-% 6.3 Acceleration Vectors (Orange) - Scaled
-S_a = 0.02;
-quiver(RAx, RAy, AAx*S_a, AAy*S_a, 0, 'Color', [1 0.5 0], 'LineWidth', 2, 'MaxHeadSize', 0.5);
-quiver(RBx, RBy, ABx*S_a, ABy*S_a, 0, 'Color', [1 0.5 0], 'LineWidth', 2, 'MaxHeadSize', 0.5);
-
-legend('Crank', 'Coupler', 'Rocker', 'Ground', 'Velocity', 'Velocity', 'Accel', 'Accel');
+% --- PLOT CASE 2 (Crossed) ---
+subplot(1,2,2); hold on; axis equal; grid on;
+title('Case 2: Crossed Configuration');
+plot_mechanism(a, b, c, d, theta2, t3_sol2, t4_sol2);
+xlim([-100 350]); ylim([-150 250
